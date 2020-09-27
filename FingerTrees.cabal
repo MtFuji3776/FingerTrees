@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2f96bf5374cd51eb2eb58be1b2ea1ac9fa5592e94991a7039018d80d3c67d6c2
+-- hash: 987ab6b1eac48a3607f69d42933529d9e9fcbc18fbe2d35871feb94960fb617a
 
 name:           FingerTrees
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Fingertrees
       Lib
   other-modules:
       Paths_FingerTrees
