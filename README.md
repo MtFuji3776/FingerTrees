@@ -9,3 +9,4 @@
 
 - diagramsはSegTreeにFingerTreeを用いている
 
+- これ、いわゆるB木を更に改造したものっぽい。
