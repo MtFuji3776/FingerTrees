@@ -17,13 +17,21 @@ data Node a = Node2 a a | Node3 a a a
 type Digit a = [a]
 
 data FingerTree a = Empty | Single a | Deep (Digit a) (FingerTree (Node a)) (Digit a)
+-- 節点がリストを二つ抱え込みつつさらにRoseTree構造を持っているということか？
+    -- ちょっと違うか。Deepの部分木のFingerTreeはNode aを成分に持つ
+    -- 仮にFingerTree (Node a)がDeepコンストラクタで構成されていた場合、その部分木はFingerTree (Node (Node a))
+    -- なるほど確かにNodeを多重に再帰させた構造を取っている
+    -- Nodeは2分木または3分木構造だったので、Deepが直列した回数だけNodeの入れ子が深まる
+    -- 型構造によって、木構造の階層の深さは確かに均一にならざるを得ない。巧妙。
 
+-- Nodeの畳み込み
 instance Reduce Node where
     reducer f (Node2 a b) z   = a `f` (b `f` z)
     reducer f (Node3 a b c) z = a `f` (b `f` (c `f` z))
     reducel g z (Node2 b a) = (z `g` b) `g` a
     reducel g z (Node3 c b a) = ((z `g` c) `g` b) `g` a
 
+-- 畳み込み
 instance Reduce FingerTree where
     reducer r Empty          z = z
     reducer r (Single x)     z = x `r` z
@@ -36,6 +44,8 @@ instance Reduce FingerTree where
         where l'  = reducel l
               l'' = reducel (reducel l)
 
+
+-- 左Cons
 infixr 5 <|
 (<|) :: a -> FingerTree a -> FingerTree a
 a <| Empty = Single a

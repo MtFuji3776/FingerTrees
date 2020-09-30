@@ -8,3 +8,4 @@
     - NodeとLeafで異なる型の値が入れる仕様は、カスケーディングスタイルシートの要領でAttributeを適用するのに適するのではないか
 
 - diagramsはSegTreeにFingerTreeを用いている
+
