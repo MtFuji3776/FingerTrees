@@ -112,7 +112,8 @@ viewL (Deep pr m sf) =
 
 -- ConsL (head pr) (deepL (tail pr) m sf)
 
--- 左側のDigitでパターン分けする補助コンストラクタ
+-- 左側のDigitがOne _の場合の補助コンストラクタ
+    -- 深層から適切にDigitを取り出して上層に配置する
 deepL :: Digit a -> FingerTree (Node a) -> Digit a -> FingerTree a
 deepL d m sf =  
     case viewL m of
@@ -131,3 +132,201 @@ tailL :: FingerTree a -> FingerTree a
 tailL x = case viewL x of ConsL _ x' -> x' -- partial definition
 -- 遅延評価のおかげで、viewLのtailの部分は使う時まで計算されない
 
+-- 見よう見まねでViewR作成
+data ViewR s a = NilR | ConsR (s a) a
+
+-- コンストラクタ
+viewR :: FingerTree a -> ViewR FingerTree a
+viewR Empty = NilR
+viewR (Single x) = ConsR Empty x
+viewR (Deep pr m sf) = 
+    case sf of One x -> ConsR (deepR pr m (One x)) x -- 本当ならdeepRの第3引数にはZeroが適するのだが
+               Two x y -> ConsR (Deep pr m (One x)) y
+               Three x y z -> ConsR (Deep pr m (Two x y)) z
+               Four x y z w -> ConsR (Deep pr m (Three x y z)) w
+
+-- 補助コンストラクタ
+deepR :: Digit a -> (FingerTree (Node a)) -> Digit a -> FingerTree a
+deepR pr m d = -- dがシカトされているのは、ここにはZeroが入っていると見做しているから
+    case viewR m of
+        NilR -> toTree pr
+        ConsR m' a -> 
+            case a of Node2 x y   -> Deep pr m' (Two x y)
+                      Node3 x y z -> Deep pr m' (Three x y z)
+
+headR :: FingerTree a -> a
+headR x = case viewR x of ConsR _ a -> a
+
+tailR :: FingerTree a -> FingerTree a
+tailR x = case viewR x of ConsR m _ -> m
+
+
+-- FingerTree同士のAppend
+
+-- 結合関数の準備
+    -- パターンマッチが4^3 = 64通りもあるので、そのプログラムを生成するプログラムを書く
+
+
+-- Digit a値を、要素の並びを保ちつつリスト化
+digitToList :: Digit a -> [a]
+digitToList d =
+    case d of One a        -> [a]
+              Two a b      -> [a,b]
+              Three a b c  -> [a,b,c]
+              Four a b c d -> [a,b,c,d]
+
+-- Digit aの三つ組を一つのリストに
+    -- 全体の要素の並びが保存されてるのがミソ。
+    -- Digit aの順列の情報を無くして、Nodeに切り替えやすくしている
+digitsToList :: (Digit a,Digit a,Digit a) -> [a]
+digitsToList (d1,d2,d3) = concatMap digitToList [d1,d2,d3]
+
+-- 要素数2~12のリストをDigitにする部分関数
+    -- Digitが1~4,Nodeが2または3個の値だけ保持することに基づいている
+listToDigitNode :: [a] -> Digit (Node a)
+listToDigitNode xs = 
+    case xs of [a,b]                     -> One (Node2 a b)
+               [a,b,c]                   -> One (Node3 a b c)
+               [a,b,c,d]                 -> Two (Node2 a b) (Node2 c d)
+               [a,b,c,d,e]               -> Two (Node3 a b c) (Node2 d e)
+               [a,b,c,d,e,f]             -> Two (Node3 a b c) (Node3 d e f)
+               [a,b,c,d,e,f,g]           -> Three (Node3 a b c) (Node2 d e) (Node2 f g)
+               [a,b,c,d,e,f,g,h]         -> Three (Node3 a b c) (Node3 d e f) (Node2 g h)
+               [a,b,c,d,e,f,g,h,i]       -> Three (Node3 a b c) (Node3 d e f) (Node3 g h i)
+               [a,b,c,d,e,f,g,h,i,j]     -> Four (Node3 a b c) (Node3 d e f) (Node2 g h) (Node2 i j)
+               [a,b,c,d,e,f,g,h,i,j,k]   -> Four (Node3 a b c) (Node3 d e f) (Node3 g h i) (Node2 j k)
+               [a,b,c,d,e,f,g,h,i,j,k,l] -> Four (Node3 a b c) (Node3 d e f) (Node3 g h i) (Node3 j k l)
+
+-- 関数を合成して、Digit aの三つ組を一つのDigit (Node a)値に変換
+digitsToDigitNode :: (Digit a,Digit a,Digit a) -> Digit (Node a)
+digitsToDigitNode = listToDigitNode . digitsToList
+
+printPattern :: Show a => (Digit a,Digit a, Digit a) -> String
+printPattern (d1,d2,d3) = 
+    let dn = digitsToDigitNode (d1,d2,d3) 
+    in show (d1,d2,d3) ++ " -> " ++ show dn ++ "\n"
+
+-- Digit aの三つ組全体へのパターンマッチを出力
+    -- 変数記号をとりあえずCharで表し、出力結果からTurtleあたりの正規表現関数でシングルクォテーションを除去すれば良い
+printAllPatterns :: String
+printAllPatterns = 
+    let xs1 = [One "x1",Two "x2" "y2",Three "x3" "y3" "z3", Four "x4" "y4" "z4" "w4"] 
+        xs2 = [One "x1'",Two "x2'" "y2'",Three "x3'" "y3'" "z3'", Four "x4'" "y4'" "z4'" "w4'"] 
+        xs3 = [One "x1''",Two "x2''" "y2''",Three "x3''" "y3''" "z3''", Four "x4''" "y4''" "z4''" "w4''"] 
+    in concatMap printPattern [(x,y,z) | x <- xs1, y<- xs2, z <- xs3]
+
+-- 構成したパターンマッチを使ってconcat用関数を定義
+app3 :: FingerTree a -> Digit a -> FingerTree a -> FingerTree a
+app3 Empty dg xs = dg <|^ xs
+app3 xs dg Empty = xs |>^ dg
+app3 (Single x) dg xs = x <| (dg <|^ xs)
+app3 xs dg (Single x) = (xs |>^ dg) |> x
+app3 (Deep pr1 m1 sf1) dg (Deep pr2 m2 sf2) = Deep pr1 (app3 m1 (nodes (sf1, dg, pr2)) m2) sf2
+
+-- 全パターン網羅のパターンマッチ。printAllPatternsに出力させたプログラム。
+-- 二つのFingerTree xs,ysのうち、xsの右側のDigitとysの左側のDigitをまとめて一つのDigit (Node)にする関数。
+-- これにより再帰的に部分木をまとめ上げる関数が定義できている
+nodes :: (Digit a, Digit a, Digit a) -> Digit (Node a)
+nodes dgs = 
+    case dgs of (One x1,One x1',One x1'') -> One (Node3 x1 x1' x1'')
+                (One x1,One x1',Two x2'' y2'') -> Two (Node2 x1 x1') (Node2 x2'' y2'')
+                (One x1,One x1',Three x3'' y3'' z3'') -> Two (Node3 x1 x1' x3'') (Node2 y3'' z3'')
+                (One x1,One x1',Four x4'' y4'' z4'' w4'') -> Two (Node3 x1 x1' x4'') (Node3 y4'' z4'' w4'')
+                (One x1,Two x2' y2',One x1'') -> Two (Node2 x1 x2') (Node2 y2' x1'')
+                (One x1,Two x2' y2',Two x2'' y2'') -> Two (Node3 x1 x2' y2') (Node2 x2'' y2'')
+                (One x1,Two x2' y2',Three x3'' y3'' z3'') -> Two (Node3 x1 x2' y2') (Node3 x3'' y3'' z3'')
+                (One x1,Two x2' y2',Four x4'' y4'' z4'' w4'') -> Three (Node3 x1 x2' y2') (Node2 x4'' y4'') (Node2 z4'' w4'')
+                (One x1,Three x3' y3' z3',One x1'') -> Two (Node3 x1 x3' y3') (Node2 z3' x1'')
+                (One x1,Three x3' y3' z3',Two x2'' y2'') -> Two (Node3 x1 x3' y3') (Node3 z3' x2'' y2'')
+                (One x1,Three x3' y3' z3',Three x3'' y3'' z3'') -> Three (Node3 x1 x3' y3') (Node2 z3' x3'') (Node2 y3'' z3'')
+                (One x1,Three x3' y3' z3',Four x4'' y4'' z4'' w4'') -> Three (Node3 x1 x3' y3') (Node3 z3' x4'' y4'') (Node2 z4'' w4'')
+                (One x1,Four x4' y4' z4' w4',One x1'') -> Two (Node3 x1 x4' y4') (Node3 z4' w4' x1'')
+                (One x1,Four x4' y4' z4' w4',Two x2'' y2'') -> Three (Node3 x1 x4' y4') (Node2 z4' w4') (Node2 x2'' y2'')
+                (One x1,Four x4' y4' z4' w4',Three x3'' y3'' z3'') -> Three (Node3 x1 x4' y4') (Node3 z4' w4' x3'') (Node2 y3'' z3'')
+                (One x1,Four x4' y4' z4' w4',Four x4'' y4'' z4'' w4'') -> Three (Node3 x1 x4' y4') (Node3 z4' w4' x4'') (Node3 y4'' z4'' w4'')
+                (Two x2 y2,One x1',One x1'') -> Two (Node2 x2 y2) (Node2 x1' x1'')
+                (Two x2 y2,One x1',Two x2'' y2'') -> Two (Node3 x2 y2 x1') (Node2 x2'' y2'')
+                (Two x2 y2,One x1',Three x3'' y3'' z3'') -> Two (Node3 x2 y2 x1') (Node3 x3'' y3'' z3'')
+                (Two x2 y2,One x1',Four x4'' y4'' z4'' w4'') -> Three (Node3 x2 y2 x1') (Node2 x4'' y4'') (Node2 z4'' w4'')
+                (Two x2 y2,Two x2' y2',One x1'') -> Two (Node3 x2 y2 x2') (Node2 y2' x1'')
+                (Two x2 y2,Two x2' y2',Two x2'' y2'') -> Two (Node3 x2 y2 x2') (Node3 y2' x2'' y2'')
+                (Two x2 y2,Two x2' y2',Three x3'' y3'' z3'') -> Three (Node3 x2 y2 x2') (Node2 y2' x3'') (Node2 y3'' z3'')
+                (Two x2 y2,Two x2' y2',Four x4'' y4'' z4'' w4'') -> Three (Node3 x2 y2 x2') (Node3 y2' x4'' y4'') (Node2 z4'' w4'')
+                (Two x2 y2,Three x3' y3' z3',One x1'') -> Two (Node3 x2 y2 x3') (Node3 y3' z3' x1'')
+                (Two x2 y2,Three x3' y3' z3',Two x2'' y2'') -> Three (Node3 x2 y2 x3') (Node2 y3' z3') (Node2 x2'' y2'')
+                (Two x2 y2,Three x3' y3' z3',Three x3'' y3'' z3'') -> Three (Node3 x2 y2 x3') (Node3 y3' z3' x3'') (Node2 y3'' z3'')
+                (Two x2 y2,Three x3' y3' z3',Four x4'' y4'' z4'' w4'') -> Three (Node3 x2 y2 x3') (Node3 y3' z3' x4'') (Node3 y4'' z4'' w4'')
+                (Two x2 y2,Four x4' y4' z4' w4',One x1'') -> Three (Node3 x2 y2 x4') (Node2 y4' z4') (Node2 w4' x1'')
+                (Two x2 y2,Four x4' y4' z4' w4',Two x2'' y2'') -> Three (Node3 x2 y2 x4') (Node3 y4' z4' w4') (Node2 x2'' y2'')
+                (Two x2 y2,Four x4' y4' z4' w4',Three x3'' y3'' z3'') -> Three (Node3 x2 y2 x4') (Node3 y4' z4' w4') (Node3 x3'' y3'' z3'')
+                (Two x2 y2,Four x4' y4' z4' w4',Four x4'' y4'' z4'' w4'') -> Four (Node3 x2 y2 x4') (Node3 y4' z4' w4') (Node2 x4'' y4'') (Node2 z4'' w4'')
+                (Three x3 y3 z3,One x1',One x1'') -> Two (Node3 x3 y3 z3) (Node2 x1' x1'')
+                (Three x3 y3 z3,One x1',Two x2'' y2'') -> Two (Node3 x3 y3 z3) (Node3 x1' x2'' y2'')
+                (Three x3 y3 z3,One x1',Three x3'' y3'' z3'') -> Three (Node3 x3 y3 z3) (Node2 x1' x3'') (Node2 y3'' z3'')
+                (Three x3 y3 z3,One x1',Four x4'' y4'' z4'' w4'') -> Three (Node3 x3 y3 z3) (Node3 x1' x4'' y4'') (Node2 z4'' w4'')
+                (Three x3 y3 z3,Two x2' y2',One x1'') -> Two (Node3 x3 y3 z3) (Node3 x2' y2' x1'')
+                (Three x3 y3 z3,Two x2' y2',Two x2'' y2'') -> Three (Node3 x3 y3 z3) (Node2 x2' y2') (Node2 x2'' y2'')
+                (Three x3 y3 z3,Two x2' y2',Three x3'' y3'' z3'') -> Three (Node3 x3 y3 z3) (Node3 x2' y2' x3'') (Node2 y3'' z3'')
+                (Three x3 y3 z3,Two x2' y2',Four x4'' y4'' z4'' w4'') -> Three (Node3 x3 y3 z3) (Node3 x2' y2' x4'') (Node3 y4'' z4'' w4'')
+                (Three x3 y3 z3,Three x3' y3' z3',One x1'') -> Three (Node3 x3 y3 z3) (Node2 x3' y3') (Node2 z3' x1'')
+                (Three x3 y3 z3,Three x3' y3' z3',Two x2'' y2'') -> Three (Node3 x3 y3 z3) (Node3 x3' y3' z3') (Node2 x2'' y2'')
+                (Three x3 y3 z3,Three x3' y3' z3',Three x3'' y3'' z3'') -> Three (Node3 x3 y3 z3) (Node3 x3' y3' z3') (Node3 x3'' y3'' z3'')
+                (Three x3 y3 z3,Three x3' y3' z3',Four x4'' y4'' z4'' w4'') -> Four (Node3 x3 y3 z3) (Node3 x3' y3' z3') (Node2 x4'' y4'') (Node2 z4'' w4'')
+                (Three x3 y3 z3,Four x4' y4' z4' w4',One x1'') -> Three (Node3 x3 y3 z3) (Node3 x4' y4' z4') (Node2 w4' x1'')
+                (Three x3 y3 z3,Four x4' y4' z4' w4',Two x2'' y2'') -> Three (Node3 x3 y3 z3) (Node3 x4' y4' z4') (Node3 w4' x2'' y2'')
+                (Three x3 y3 z3,Four x4' y4' z4' w4',Three x3'' y3'' z3'') -> Four (Node3 x3 y3 z3) (Node3 x4' y4' z4') (Node2 w4' x3'') (Node2 y3'' z3'')
+                (Three x3 y3 z3,Four x4' y4' z4' w4',Four x4'' y4'' z4'' w4'') -> Four (Node3 x3 y3 z3) (Node3 x4' y4' z4') (Node3 w4' x4'' y4'') (Node2 z4'' w4'')
+                (Four x4 y4 z4 w4,One x1',One x1'') -> Two (Node3 x4 y4 z4) (Node3 w4 x1' x1'')
+                (Four x4 y4 z4 w4,One x1',Two x2'' y2'') -> Three (Node3 x4 y4 z4) (Node2 w4 x1') (Node2 x2'' y2'')
+                (Four x4 y4 z4 w4,One x1',Three x3'' y3'' z3'') -> Three (Node3 x4 y4 z4) (Node3 w4 x1' x3'') (Node2 y3'' z3'')
+                (Four x4 y4 z4 w4,One x1',Four x4'' y4'' z4'' w4'') -> Three (Node3 x4 y4 z4) (Node3 w4 x1' x4'') (Node3 y4'' z4'' w4'')
+                (Four x4 y4 z4 w4,Two x2' y2',One x1'') -> Three (Node3 x4 y4 z4) (Node2 w4 x2') (Node2 y2' x1'')
+                (Four x4 y4 z4 w4,Two x2' y2',Two x2'' y2'') -> Three (Node3 x4 y4 z4) (Node3 w4 x2' y2') (Node2 x2'' y2'')
+                (Four x4 y4 z4 w4,Two x2' y2',Three x3'' y3'' z3'') -> Three (Node3 x4 y4 z4) (Node3 w4 x2' y2') (Node3 x3'' y3'' z3'')
+                (Four x4 y4 z4 w4,Two x2' y2',Four x4'' y4'' z4'' w4'') -> Four (Node3 x4 y4 z4) (Node3 w4 x2' y2') (Node2 x4'' y4'') (Node2 z4'' w4'')
+                (Four x4 y4 z4 w4,Three x3' y3' z3',One x1'') -> Three (Node3 x4 y4 z4) (Node3 w4 x3' y3') (Node2 z3' x1'')
+                (Four x4 y4 z4 w4,Three x3' y3' z3',Two x2'' y2'') -> Three (Node3 x4 y4 z4) (Node3 w4 x3' y3') (Node3 z3' x2'' y2'')
+                (Four x4 y4 z4 w4,Three x3' y3' z3',Three x3'' y3'' z3'') -> Four (Node3 x4 y4 z4) (Node3 w4 x3' y3') (Node2 z3' x3'') (Node2 y3'' z3'')
+                (Four x4 y4 z4 w4,Three x3' y3' z3',Four x4'' y4'' z4'' w4'') -> Four (Node3 x4 y4 z4) (Node3 w4 x3' y3') (Node3 z3' x4'' y4'') (Node2 z4'' w4'')
+                (Four x4 y4 z4 w4,Four x4' y4' z4' w4',One x1'') -> Three (Node3 x4 y4 z4) (Node3 w4 x4' y4') (Node3 z4' w4' x1'')
+                (Four x4 y4 z4 w4,Four x4' y4' z4' w4',Two x2'' y2'') -> Four (Node3 x4 y4 z4) (Node3 w4 x4' y4') (Node2 z4' w4') (Node2 x2'' y2'')
+                (Four x4 y4 z4 w4,Four x4' y4' z4' w4',Three x3'' y3'' z3'') -> Four (Node3 x4 y4 z4) (Node3 w4 x4' y4') (Node3 z4' w4' x3'') (Node2 y3'' z3'')
+                (Four x4 y4 z4 w4,Four x4' y4' z4' w4',Four x4'' y4'' z4'' w4'') -> Four (Node3 x4 y4 z4) (Node3 w4 x4' y4') (Node3 z4' w4' x4'') (Node3 y4'' z4'' w4'')
+
+
+-- タプル版Digitに基づいてapp3を計算するための工夫関数
+    -- これもDigitにZeroを含めれば解決するんだが。
+-- 左端のDigitを取り出す
+headDigitL :: FingerTree a -> Digit a
+headDigitL (Single x)     = One x
+headDigitL (Deep pr m sf) = pr
+-- 右端のDigit
+headDigitR :: FingerTree a -> Digit a
+headDigitR (Single x)     = One x
+headDigitR (Deep pr m sf) = sf
+
+-- tailDigitの計算に必要
+nodeToDigit :: Node a -> Digit a
+nodeToDigit (Node2 x y) = Two x y
+nodeToDigit (Node3 x y z) = Three x y z
+
+-- 
+tailDigitL :: FingerTree a -> FingerTree a
+tailDigitL (Single x) = Empty
+tailDigitL (Deep pr m sf) = 
+    case m of Empty -> toTree sf
+              Single x -> x <|^ (toTree sf)
+              Deep pr' m' sf' -> Deep (nodeToDigit $ headL m) (tailL m) sf -- headDigitLとtailDigitLを合わせれば全体が復元されることを利用して再帰
+
+tailDigitR :: FingerTree a -> FingerTree a
+tailDigitR (Single x) = Empty
+tailDigitR (Deep pr m sf) = 
+    case m of Empty -> toTree pr
+              Single x -> (toTree sf) |>^ x
+              Deep pr' m' sf' -> Deep pr (tailR m) (nodeToDigit $ headR m) -- 再帰。
+
+-- FingerTree同士のappend演算
+-- これでconcatも計算できるようになる
+-- 驚くべきは計算効率で、引数のサイズ（要素数）をそれぞれn1,n2とするとき、appendの実行時間はlog(min{n1,n2})
+(><) :: FingerTree a -> FingerTree a -> FingerTree a
+xs >< ys = app3 (tailDigitR xs) (headDigitR xs) ys
