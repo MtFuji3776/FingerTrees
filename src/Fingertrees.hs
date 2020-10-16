@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 module Fingertrees where
 
 class Reduce f where
@@ -330,3 +331,39 @@ tailDigitR (Deep pr m sf) =
 -- 驚くべきは計算効率で、引数のサイズ（要素数）をそれぞれn1,n2とするとき、appendの実行時間はlog(min{n1,n2})
 (><) :: FingerTree a -> FingerTree a -> FingerTree a
 xs >< ys = app3 (tailDigitR xs) (headDigitR xs) ys
+
+
+-- 測度付きFingerTree
+
+class Monoid v => Measured a v where
+    msr :: a -> v
+
+data NodeM v a = Node2M v a a | Node3M v a a a
+
+-- コンストラクタ。複数値をNodeにまとめる際には、Monoid値を演算する
+node2M :: (Measured a v) => a -> a -> NodeM v a
+node2M a b = Node2M (msr a `mappend` msr b) a b
+
+node3M :: (Measured a v) => a -> a -> a -> NodeM v a
+node3M a b c = Node3M (msr a `mappend` msr b `mappend` msr c) a b c
+
+-- 
+instance (Monoid v) => Measured (NodeM v a) v where
+    msr (Node2M v _ _)   = v
+    msr (Node3M v _ _ _) = v
+
+instance (Measured a v) => Measured (Digit a) v where
+    msr = reducel (\i a -> mappend i (msr a)) mempty
+
+data FingerTreeM v a = EmptyM
+                     | SingleM a
+                     | DeepM v (Digit a) (FingerTreeM v (NodeM v a)) (Digit a)
+
+deepM :: (Measured a v) => Digit a -> FingerTreeM v (NodeM v a) -> Digit a -> FingerTreeM v a
+deepM pr m sf = DeepM ((msr pr) `mappend` (msr m) `mappend` (msr sf)) pr m sf
+
+instance Measured a v => Measured (FingerTreeM v a) v where
+    msr EmptyM         = mempty
+    msr (SingleM x)    = msr x
+    msr (DeepM v _ _ _) = v
+
