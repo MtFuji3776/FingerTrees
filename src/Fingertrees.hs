@@ -338,7 +338,7 @@ xs >< ys = app3 (tailDigitR xs) (headDigitR xs) ys
 class Monoid v => Measured a v where
     msr :: a -> v
 
-data NodeM v a = Node2M v a a | Node3M v a a a
+data NodeM v a = Node2M v a a | Node3M v a a a deriving(Show)
 
 -- コンストラクタ。複数値をNodeにまとめる際には、Monoid値を演算する
 node2M :: (Measured a v) => a -> a -> NodeM v a
@@ -347,6 +347,8 @@ node2M a b = Node2M (msr a `mappend` msr b) a b
 node3M :: (Measured a v) => a -> a -> a -> NodeM v a
 node3M a b c = Node3M (msr a `mappend` msr b `mappend` msr c) a b c
 
+-- instance (Measured a v) => Reduce (NodeM v a) where
+--     reducel  
 -- 
 instance (Monoid v) => Measured (NodeM v a) v where
     msr (Node2M v _ _)   = v
@@ -358,6 +360,7 @@ instance (Measured a v) => Measured (Digit a) v where
 data FingerTreeM v a = EmptyM
                      | SingleM a
                      | DeepM v (Digit a) (FingerTreeM v (NodeM v a)) (Digit a)
+        deriving(Show)
 
 deepM :: (Measured a v) => Digit a -> FingerTreeM v (NodeM v a) -> Digit a -> FingerTreeM v a
 deepM pr m sf = DeepM ((msr pr) `mappend` (msr m) `mappend` (msr sf)) pr m sf
@@ -367,3 +370,58 @@ instance Measured a v => Measured (FingerTreeM v a) v where
     msr (SingleM x)    = msr x
     msr (DeepM v _ _ _) = v
 
+
+-- NodeMのReduceインスタンス化
+instance Reduce (NodeM v) where
+    reducer r (Node2M _ a b) z   = a `r` (b `r` z)
+    reducer r (Node3M _ a b c) z = a `r` (b `r` (c `r` z))
+    reducel l z (Node2M _ b a)   = (z `l` b) `l` a
+    reducel l z (Node3M _ c b a) = ((z `l` c) `l` b) `l` a
+
+-- instance Reduce Node where
+--     reducer f (Node2 a b) z   = a `f` (b `f` z)
+--     reducer f (Node3 a b c) z = a `f` (b `f` (c `f` z))
+--     reducel g z (Node2 b a) = (z `g` b) `g` a
+--     reducel g z (Node3 c b a) = ((z `g` c) `g` b) `g` a
+
+-- Measure値の更新は<||演算が担当するのでreduceは関与しなくて良いはず
+instance Reduce (FingerTreeM v) where
+    reducer r EmptyM z = z
+    reducer r (SingleM x) z = x `r` z
+    reducer r (DeepM v1 pr m sf) z= pr `r'` (m `r''` (sf `r'` z))
+        where r' = reducer r
+              r'' = reducer (reducer r)
+    reducel l z EmptyM = z
+    reducel l z (SingleM x) = z `l` x
+    reducel l z (DeepM v1 pr m sf) = ((z `l'` pr) `l''` m) `l'` sf
+        where l' = reducel l
+              l'' = reducel (reducel l)
+
+
+-- FingerTreeMのコンストラクタ
+infixr 5 <||
+(<||) :: (Measured a v) => a -> FingerTreeM v a -> FingerTreeM v a
+a <|| EmptyM = SingleM a
+a <|| SingleM b = deepM (One a) EmptyM (One b)
+a <|| DeepM _ (Four b c d e) m sf = deepM (Two a b) (node3M c d e <|| m) sf
+a <|| DeepM _ pr m sf = 
+    case pr of One x       -> deepM (Two a x) m sf
+               Two x y     -> deepM (Three a x y) m sf
+               Three x y z -> deepM (Four a x y z) m sf
+
+(<||^) :: (Measured a v, Reduce f) => f a -> FingerTreeM v a -> FingerTreeM v a 
+(<||^) = reducer (<||)
+
+toTreeM :: (Measured a v, Reduce f) => f a -> FingerTreeM v a
+toTreeM s = s <||^ EmptyM
+
+-- 木のサイズをモノイドにする
+newtype Size = Size{getSize :: Integer}
+    deriving(Eq,Ord,Show)
+
+instance Semigroup Size where
+    (Size m) <> (Size n) = Size (m+n)
+
+instance Monoid Size where
+    mempty  = Size 0
+    mappend = (<>)
